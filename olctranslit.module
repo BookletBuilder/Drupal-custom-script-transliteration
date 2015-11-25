@@ -1,0 +1,413 @@
+<?php
+
+function _olctranslit_tables() {
+  
+  $tables = array(
+    '_none' => t('Not used'),
+    'code' => t('Code (demo)'),
+  );
+  
+  return $tables;
+  
+}
+function _olctranslit_default_table_key() {
+
+  // When this is selected then the orthography is not transliterated
+  return '_none';
+  
+}
+
+function olctranslit_init() {
+
+  $user = $GLOBALS['user'];
+
+  variable_set('default_orthography', _olctranslit_default_table_key());
+
+  if (isset($_SESSION)) {
+
+    $key = 'olc_pref_orthography';
+    $default = _olctranslit_default_table_key();
+    $_SESSION[$key] = $user->uid > 0 && isset($user->data[$key])
+                    ? $user->data[$key]
+                    : (isset($_SESSION[$key]) ? $_SESSION[$key] : $default)
+                    ;
+
+    $key = 'olc_pref_show_accents';
+    $default = 'yes';
+    $_SESSION[$key] = $user->uid > 0 && isset($user->data[$key])
+                    ? $user->data[$key]
+                    : (isset($_SESSION[$key]) ? $_SESSION[$key] : $default)
+                    ;
+
+  }
+
+}
+
+function olctranslit_menu() {
+  
+  return array(
+    'orthography-preference' => array(
+      'title' => 'Orthography preference',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('_olctranslit_preference_form'),
+      'access callback' => TRUE
+    ),
+  );
+
+}
+
+function _olctranslit_preference_form() {
+  
+  $form = array();
+  
+  $form['orthography'] = array(
+     '#required' => '0',
+     '#key_type_toggled' => '1',
+     '#default_value' => isset($_SESSION['olc_pref_orthography']) ? $_SESSION['olc_pref_orthography'] : _olctranslit_default_table_key(),
+     '#weight' => '0',
+     '#type' => 'radios',
+     '#options' => _olctranslit_tables(),
+     '#title' => t('Orthography:'),
+  );
+  
+  $form['show_accents'] = array(
+     '#weight' => '1',
+     '#required' => '0',
+     '#key_type_toggled' => '1',
+     '#default_value' => isset($_SESSION['olc_pref_show_accents']) ? $_SESSION['olc_pref_show_accents'] : 'yes',
+     '#type' => 'radios',
+     '#options' => array(
+       'yes' => t('Yes'),
+       'no' => t('No'),
+     ),
+     '#title' => t('Show accent marks:'),
+  );
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save preferences'),
+    '#weight' => '2',
+  );
+  
+  return $form;
+
+}
+
+function _olctranslit_preference_form_submit($form, &$form_state) {
+  
+  // Save to current user
+  $user = $GLOBALS['user'];
+  if ($user->uid != 0) {
+    user_save($user, array(
+      'data' => array(
+        'olc_pref_orthography' => $form_state['values']['orthography'],
+        'olc_pref_show_accents' => $form_state['values']['show_accents'],
+      ),
+    ));
+  }
+  else {
+    $_SESSION['olc_pref_orthography'] = $form_state['values']['orthography'];
+    $_SESSION['olc_pref_show_accents'] = $form_state['values']['show_accents'];
+  }
+  
+  // Show success message
+  drupal_set_message('Preferences saved');
+
+}
+
+function olctranslit_transliterate_node_title($node) {
+  
+  $title = '';
+  
+  if ($node->type == 'section') {
+    
+    $booklet_name_field_key = 'field_section_name';
+    $booklet_name_lang = field_language('node', $node, $booklet_name_field_key);
+    $booklet_name = $node->{$booklet_name_field_key}[$booklet_name_lang][0]['value'];
+    $booklet_name_is_empty = empty($booklet_name);
+    
+    $booklet_name_translated_field_key = 'field_translation';
+    $booklet_name_translated_lang = field_language('node', $node, $booklet_name_translated_field_key);
+    $booklet_name_translated = $node->{$booklet_name_translated_field_key}[$booklet_name_translated_lang][0]['value'];
+    $booklet_name_translated_is_empty = empty($node->{$booklet_name_translated_field_key}[$booklet_name_translated_lang][0]['value']);
+
+    $both_exist = !$booklet_name_is_empty && !$booklet_name_translated_is_empty;
+    $both_missing = $booklet_name_is_empty && $booklet_name_translated_is_empty;
+    
+    if ($both_exist) {
+      
+      $title = olctranslit_transliterate($booklet_name) . ' / ' . $booklet_name_translated;
+      
+    }
+    elseif ($both_missing) {
+
+      $title = 'BOOKLET';
+      
+    }
+    elseif ($booklet_name_translated_is_empty) {
+      
+      $title = $booklet_name;
+      
+    }
+    elseif ($booklet_name_is_empty) {
+      
+      $title = $booklet_name_translated;
+      
+    }
+    else {
+      
+      // Should not get here
+      $title = $node->title;
+      
+    }
+    
+  }
+  else {
+    
+    $title = olctranslit_transliterate($node->title);
+  
+  }
+  
+  return $title;
+
+}
+
+function olctranslit_node_load($nodes, $types) {
+
+  if (arg(0).'/'.arg(2) == 'node/edit') {
+    // Do not transliterate at the node/edit page
+    return;
+  }
+
+  $config = _olctranslit_config();
+
+  // For each relevant type
+  if (count(array_intersect(array_keys($config), $types)) > 0) {
+  
+    // For each relevant node
+    foreach ($nodes as &$node) {
+      if (in_array($node->type, array_keys($config))) {
+
+        // For the title
+        $node->title = olctranslit_transliterate_node_title($node);
+
+        // For each relevant field
+        foreach ($config[$node->type] as $field_name) {
+          if (!empty($node->{$field_name})) {
+
+            if ($field_name == 'body' || strncmp($field_name, 'field_', strlen('field_')) == 0) {
+
+              // Treate like a field
+              if ($node->{$field_name}['und'][0]) {
+                $field = &$node->{$field_name}['und'][0];
+                if (isset($field['value'])) {
+                  $node->{$field_name}['und'][0]['value'] = olctranslit_transliterate($field['value']);
+                }
+                else {
+                  dpm($field_name);
+                  dpm($field);
+                }
+                if (isset($field['safe_value'])) {
+                  $node->{$field_name}['und'][0]['safe_value'] = olctranslit_transliterate($field['safe_value']);
+                }
+                else {
+                  dpm($field_name);
+                  dpm($field);
+                }
+              }
+              else {
+                // Field is empty
+              }
+
+            }
+            elseif (is_string($node->{$field_name})) {
+
+              // Treat like a property value
+              $node->{$field_name} = olctranslit_transliterate($node->{$field_name});
+
+            }
+            else {
+              watchdog('olctranslit', 'Problem transliterating field: ' . $node->type . '->' . $field_name, array(), WATCHDOG_ERROR);
+            }
+
+          }
+          else {
+            // Field not available in node
+          }
+
+        } // end foreach
+
+      }
+      else {
+        // Node type isn't in the valid types for this operation
+      }
+
+
+    } // end foreach
+
+
+  }
+  else {
+    // Types not valid
+  }
+
+}
+
+function olctranslit_transliterate($string) {
+
+  if (is_string($string)) {
+
+    //  Normalize input
+    $string = olctranslit_normalize($string);
+
+    if (isset($_SESSION)) {
+
+      //
+      // Strip accents
+      //
+      
+      $is_strip_accents = isset($_SESSION['olc_pref_show_accents']) && ($_SESSION['olc_pref_show_accents'] == 'no');
+      if ($is_strip_accents) {
+        
+        $string = olctranslit_strip_accents($string);
+        
+      }
+      else {
+        // Leave accents
+      }
+
+      //
+      // Transliterate orthography
+      //
+      
+      $default_orthography = variable_get('default_orthography', _olctranslit_default_table_key());
+
+      $chosen_orthography = $default_orthography;
+      if (isset($_REQUEST['translit'])) {
+        
+        $chosen_orthography = $_REQUEST['translit'];
+        
+      }
+      else {
+        if (isset($_SESSION['olc_pref_orthography'])) {
+          
+          $chosen_orthography = $_SESSION['olc_pref_orthography'];
+          
+        }
+        else {
+          
+          // Using default
+          
+        }
+      }
+      
+      if ($chosen_orthography != $default_orthography) {
+        
+        $string = olctranslit_orthography($string, $chosen_orthography);
+
+      }
+      else {
+        // Already correct orthography
+      }
+
+    }
+    else {
+      // Session isn't set; So, we can't find preferences; do nothing
+    }
+
+  }
+  else {
+    // Isn't a string
+    dpm($string);
+  }
+
+  return $string;
+
+}
+
+function olctranslit_normalize($string) {
+  
+  return Normalizer::normalize($string, Normalizer::FORM_KC);
+
+}
+
+function olctranslit_orthography($string, $orthography) {
+  
+  return _olctranslit_transliterate_from_rules($string, $orthography);
+
+}
+
+function olctranslit_strip_accents($string) {
+  
+  return _olctranslit_transliterate_from_rules($string, 'strip_accents');
+
+}
+
+function _olctranslit_transliterate_from_rules($input, $rules_file_name) {
+  
+  $result = '';
+  
+  $path = drupal_get_path('module', 'olctranslit') . '/rules/' . $rules_file_name;
+  $rules = file_get_contents($path);
+
+  $transliterator = Transliterator::createFromRules($rules);
+  if ($transliterator) {
+    
+    $result = $transliterator->transliterate($input);
+  
+  }
+  else {
+    
+    dpm(intl_get_error_message());
+    $result = $input;
+  
+  }
+  
+  return $result;
+  
+}
+
+function _olctranslit_config() {
+
+  $config_data = array();
+
+  $path = drupal_get_path('module', 'olctranslit');
+  $config_file = file_get_contents($path . "/olctranslit_fields.CONFIG");
+  $config_lines = explode("\n", $config_file);
+  $current_type = NULL;
+  foreach ($config_lines as $config_line) {
+
+    $config_line = trim($config_line);
+
+    // Find current type
+    $is_type = !empty($config_line) && strpos($config_line, '->') === FALSE;
+    if ($is_type) {
+      $current_type = $config_line;
+    }
+    else {
+      // Not a type line
+    }
+
+    // Add values to current type
+    if ($current_type !== NULL) {
+      $is_field = !empty($config_line) && strpos($config_line, '->') !== FALSE;
+      if ($is_field) {
+        $config_line = explode('->', $config_line);
+        $field_name = trim($config_line[1]);
+        $config_data[$current_type] []= $field_name;
+      }
+      else {
+        // Line is not a field
+      }
+    }
+    else {
+      // Current type not found yet
+    }
+
+  }
+
+  return $config_data;
+  
+}
+
+

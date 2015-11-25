@@ -1,0 +1,6 @@
+core = 7.x
+package = .OLC
+name = OLC Transliteration 
+description = Transliterates node fields
+dependencies []= olcpart
+
