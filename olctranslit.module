@@ -123,13 +123,19 @@ function olctranslit_transliterate_node_title($node) {
     
     $booklet_name_field_key = 'field_section_name';
     $booklet_name_lang = field_language('node', $node, $booklet_name_field_key);
-    $booklet_name = $node->{$booklet_name_field_key}[$booklet_name_lang][0]['value'];
-    $booklet_name_is_empty = empty($booklet_name);
+    $booklet_name_is_empty = empty($node->{$booklet_name_field_key}[$booklet_name_lang][0]['value']);
+    $booklet_name = $booklet_name_is_empty == false
+                  ? $node->{$booklet_name_field_key}[$booklet_name_lang][0]['value']
+                  : ''
+                  ;
     
     $booklet_name_translated_field_key = 'field_translation';
     $booklet_name_translated_lang = field_language('node', $node, $booklet_name_translated_field_key);
-    $booklet_name_translated = $node->{$booklet_name_translated_field_key}[$booklet_name_translated_lang][0]['value'];
     $booklet_name_translated_is_empty = empty($node->{$booklet_name_translated_field_key}[$booklet_name_translated_lang][0]['value']);
+    $booklet_name_translated = $booklet_name_translated_is_empty == false
+                             ? $node->{$booklet_name_translated_field_key}[$booklet_name_translated_lang][0]['value']
+                             : ''
+                             ;
 
     $both_exist = !$booklet_name_is_empty && !$booklet_name_translated_is_empty;
     $both_missing = $booklet_name_is_empty && $booklet_name_translated_is_empty;
@@ -327,7 +333,7 @@ function olctranslit_transliterate($string) {
 
 function olctranslit_normalize($string) {
   
-  return Normalizer::normalize($string, Normalizer::FORM_KC);
+  return Normalizer::normalize($string, Normalizer::FORM_C);
 
 }
 
