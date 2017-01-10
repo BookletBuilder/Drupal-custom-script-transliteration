@@ -1,13 +1,9 @@
 <?php
 
 function _olctranslit_tables() {
-  
-  $tables = array(
-    '_none' => t('Not used'),
-    'code' => t('Code (demo)'),
-  );
-  
-  return $tables;
+
+  require(olccommon_get_settings_file('olctranslit', 'rules/0_indexs.php'));
+  return $olctranslit_rule_sets;
   
 }
 function _olctranslit_default_table_key() {
@@ -353,8 +349,8 @@ function _olctranslit_transliterate_from_rules($input, $rules_file_name) {
   
   $result = '';
   
-  $path = drupal_get_path('module', 'olctranslit') . '/rules/' . $rules_file_name;
-  $rules = file_get_contents($path);
+  $rules_path = olccommon_get_settings_file('olctranslit', "rules/$rules_file_name");
+  $rules = file_get_contents($rules_path);
 
   $transliterator = Transliterator::createFromRules($rules);
   if ($transliterator) {
@@ -377,9 +373,10 @@ function _olctranslit_config() {
 
   $config_data = array();
 
-  $path = drupal_get_path('module', 'olctranslit');
-  $config_file = file_get_contents($path . "/olctranslit_fields.CONFIG");
+  $config_path = olccommon_get_settings_file('olctranslit', 'fields.CONFIG');
+  $config_file = file_get_contents($config_path);
   $config_lines = explode("\n", $config_file);
+
   $current_type = NULL;
   foreach ($config_lines as $config_line) {
 
