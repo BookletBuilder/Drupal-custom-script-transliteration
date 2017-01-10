@@ -2,8 +2,19 @@
 
 function _olctranslit_tables() {
 
-  require(olccommon_get_settings_file('olctranslit', 'rules/0_indexs.php'));
-  return $olctranslit_rule_sets;
+  $path = olccommon_get_settings_file('olctranslit', 'rules/0_index.php');
+  if (file_exists($path)) {
+
+    include $path;
+
+  }
+  else {
+
+    drupal_set_message('Transliteration rules not found', 'warning');
+
+  }
+
+  return $olctranslit_index;
   
 }
 function _olctranslit_default_table_key() {
